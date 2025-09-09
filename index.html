@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESP32 遠端控制</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <script>
+    let ws;
+    function connect() {
+      const status = document.getElementById("status");
+      ws = new WebSocket("wss://your-render-app.onrender.com/audio1"); // 修改成你的 render 位址
+      ws.onopen = () => status.textContent = "🟢 已連線";
+      ws.onclose = () => status.textContent = "🔴 離線";
+      ws.onerror = () => status.textContent = "⚠️ 錯誤";
+      ws.onmessage = (e) => console.log("收到資料", e.data);
+    }
+
+    function startMic() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send("START_MIC");
+    }
+
+    function stopMic() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send("STOP_MIC");
+    }
+
+    function snapshot() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send("SNAPSHOT");
+    }
+
+    window.onload = () => {
+      connect();
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("service-worker.js");
+      }
+    };
+  </script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #f4f4f4; color: #222; text-align: center; padding: 1em; }
+    h1 { margin-top: 0; }
+    button { font-size: 18px; padding: 12px 24px; margin: 10px; border: none; border-radius: 8px; background: #2c3e50; color: white; }
+    video { width: 100%; max-width: 480px; border-radius: 12px; background: black; }
+  </style>
+</head>
+<body>
+  <h1>ESP32 控制面板</h1>
+  <p id="status">🔄 連線中...</p>
+  <div>
+    <button onclick="startMic()">🎙️ 開始說話</button>
+    <button onclick="stopMic()">🔇 停止說話</button>
+    <button onclick="snapshot()">📷 快照</button>
+  </div>
+  <div>
+    <video id="cam" autoplay playsinline></video>
+  </div>
+</body>
+</html>
