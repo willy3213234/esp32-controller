@@ -6,29 +6,113 @@
   <title>ESP32 遠端控制</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon-192.png">
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 0;
+      background: #f4f4f4;
+      color: #222;
+      text-align: center;
+      padding: 1em;
+    }
+    h1 {
+      margin-top: 0;
+    }
+    button {
+      font-size: 18px;
+      padding: 12px 24px;
+      margin: 10px;
+      border: none;
+      border-radius: 8px;
+      background: #2c3e50;
+      color: white;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #999;
+      cursor: not-allowed;
+    }
+    video {
+      width: 100%;
+      max-width: 480px;
+      border-radius: 12px;
+      background: black;
+    }
+  </style>
+</head>
+<body>
+  <h1>ESP32 控制面板</h1>
+  <p id="status">🔄 連線中...</p>
+  <div>
+    <button id="startMic" onclick="startMic()">🎙️ 開始說話</button>
+    <button id="stopMic" onclick="stopMic()">🔇 停止說話</button>
+    <button id="snapshot" onclick="snapshot()">📷 快照</button>
+  </div>
+  <div>
+    <video id="cam" autoplay playsinline></video>
+  </div>
+
   <script>
     let ws;
+
     function connect() {
       const status = document.getElementById("status");
-      ws = new WebSocket("wss://esp32-server-st33.onrender.com"); // 修改成你的 render 位址
-      ws.onopen = () => status.textContent = "🟢 已連線";
-      ws.onclose = () => status.textContent = "🔴 離線";
-      ws.onerror = () => status.textContent = "⚠️ 錯誤";
-      ws.onmessage = (e) => console.log("收到資料", e.data);
+      ws = new WebSocket("wss://esp32-server-st33.onrender.com"); // ← 換成你的 render 伺服器
+
+      ws.onopen = () => {
+        console.log("✅ WebSocket 已連線");
+        status.textContent = "🟢 已連線";
+        enableButtons(true);
+      };
+
+      ws.onclose = (e) => {
+        console.warn("🔴 WebSocket 斷線", e);
+        status.textContent = `🔴 離線（${e.code}）`;
+        enableButtons(false);
+      };
+
+      ws.onerror = (e) => {
+        console.error("⚠️ WebSocket 錯誤", e);
+        status.textContent = "⚠️ 錯誤";
+        alert("無法連線至 ESP32 Server，請確認 Render 是否啟動");
+      };
+
+      ws.onmessage = (e) => {
+        console.log("📨 收到資料：", e.data);
+        // 若未來你要接收 base64 影像、音訊等也可以寫在這裡
+      };
+    }
+
+    function enableButtons(enable) {
+      document.getElementById("startMic").disabled = !enable;
+      document.getElementById("stopMic").disabled = !enable;
+      document.getElementById("snapshot").disabled = !enable;
     }
 
     function startMic() {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        alert("WebSocket 尚未連線，無法開始說話");
+        return;
+      }
+      console.log("👉 傳送 START_MIC");
       ws.send("START_MIC");
     }
 
     function stopMic() {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        alert("WebSocket 尚未連線，無法停止說話");
+        return;
+      }
+      console.log("👉 傳送 STOP_MIC");
       ws.send("STOP_MIC");
     }
 
     function snapshot() {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        alert("WebSocket 尚未連線，無法快照");
+        return;
+      }
+      console.log("👉 傳送 SNAPSHOT");
       ws.send("SNAPSHOT");
     }
 
@@ -39,23 +123,5 @@
       }
     };
   </script>
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 0; background: #f4f4f4; color: #222; text-align: center; padding: 1em; }
-    h1 { margin-top: 0; }
-    button { font-size: 18px; padding: 12px 24px; margin: 10px; border: none; border-radius: 8px; background: #2c3e50; color: white; }
-    video { width: 100%; max-width: 480px; border-radius: 12px; background: black; }
-  </style>
-</head>
-<body>
-  <h1>ESP32 控制面板</h1>
-  <p id="status">🔄 連線中...</p>
-  <div>
-    <button onclick="startMic()">🎙️ 開始說話</button>
-    <button onclick="stopMic()">🔇 停止說話</button>
-    <button onclick="snapshot()">📷 快照</button>
-  </div>
-  <div>
-    <video id="cam" autoplay playsinline></video>
-  </div>
 </body>
 </html>
