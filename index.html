@@ -7,37 +7,15 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon-192.png">
   <style>
-    body {
-      font-family: system-ui, sans-serif;
-      margin: 0;
-      background: #f4f4f4;
-      color: #222;
-      text-align: center;
-      padding: 1em;
-    }
-    h1 {
-      margin-top: 0;
-    }
+    body { font-family: system-ui, sans-serif; margin: 0; background: #f4f4f4; color: #222; text-align: center; padding: 1em; }
+    h1 { margin-top: 0; }
     button {
-      font-size: 18px;
-      padding: 12px 24px;
-      margin: 10px;
-      border: none;
-      border-radius: 8px;
-      background: #2c3e50;
-      color: white;
-      cursor: pointer;
+      font-size: 18px; padding: 12px 24px; margin: 10px;
+      border: none; border-radius: 8px;
+      background: #2c3e50; color: white; cursor: pointer;
     }
-    button:disabled {
-      background: #999;
-      cursor: not-allowed;
-    }
-    video {
-      width: 100%;
-      max-width: 480px;
-      border-radius: 12px;
-      background: black;
-    }
+    button:disabled { background: #999; cursor: not-allowed; }
+    video { width: 100%; max-width: 480px; border-radius: 12px; background: black; }
   </style>
 </head>
 <body>
@@ -57,7 +35,7 @@
 
     function connect() {
       const status = document.getElementById("status");
-      ws = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone"); // ← 換成你的 render 伺服器
+      ws = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone");
 
       ws.onopen = () => {
         console.log("✅ WebSocket 已連線");
@@ -77,24 +55,25 @@
         alert("無法連線至 ESP32 Server，請確認 Render 是否啟動");
       };
 
-ws.onmessage = (e) => {
-  if (typeof e.data === 'string') {
-    console.log("📨 收到文字資料：", e.data);
-  } else if (e.data instanceof Blob) {
-    console.log("📨 收到 BLOB 音訊資料，大小：", e.data.size);
-    const audioCtx = new AudioContext();
-    const reader = new FileReader();
-    reader.onload = () => {
-      audioCtx.decodeAudioData(reader.result).then(buffer => {
-        const source = audioCtx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(audioCtx.destination);
-        source.start();
-      });
-    };
-    reader.readAsArrayBuffer(e.data);
-  }
-};
+      ws.onmessage = (e) => {
+        if (typeof e.data === 'string') {
+          console.log("📨 收到文字資料：", e.data);
+        } else if (e.data instanceof Blob) {
+          console.log("📨 收到 BLOB 音訊資料，大小：", e.data.size);
+          const audioCtx = new AudioContext();
+          const reader = new FileReader();
+          reader.onload = () => {
+            audioCtx.decodeAudioData(reader.result).then(buffer => {
+              const source = audioCtx.createBufferSource();
+              source.buffer = buffer;
+              source.connect(audioCtx.destination);
+              source.start();
+            });
+          };
+          reader.readAsArrayBuffer(e.data);
+        }
+      };
+    }
 
     function enableButtons(enable) {
       document.getElementById("startMic").disabled = !enable;
