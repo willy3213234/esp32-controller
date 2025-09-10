@@ -57,7 +57,7 @@
 
     function connect() {
       const status = document.getElementById("status");
-      ws = new WebSocket("wss://esp32-server-st33.onrender.com"); // ← 換成你的 render 伺服器
+      ws = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone"); // ← 換成你的 render 伺服器
 
       ws.onopen = () => {
         console.log("✅ WebSocket 已連線");
