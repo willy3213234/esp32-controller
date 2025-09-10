@@ -77,11 +77,24 @@
         alert("無法連線至 ESP32 Server，請確認 Render 是否啟動");
       };
 
-      ws.onmessage = (e) => {
-        console.log("📨 收到資料：", e.data);
-        // 若未來你要接收 base64 影像、音訊等也可以寫在這裡
-      };
-    }
+ws.onmessage = (e) => {
+  if (typeof e.data === 'string') {
+    console.log("📨 收到文字資料：", e.data);
+  } else if (e.data instanceof Blob) {
+    console.log("📨 收到 BLOB 音訊資料，大小：", e.data.size);
+    const audioCtx = new AudioContext();
+    const reader = new FileReader();
+    reader.onload = () => {
+      audioCtx.decodeAudioData(reader.result).then(buffer => {
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioCtx.destination);
+        source.start();
+      });
+    };
+    reader.readAsArrayBuffer(e.data);
+  }
+};
 
     function enableButtons(enable) {
       document.getElementById("startMic").disabled = !enable;
