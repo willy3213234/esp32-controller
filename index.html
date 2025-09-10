@@ -83,6 +83,7 @@ async function startMic() {
   if (running) return;
   running = true;
   await ensureCtx();
+  await audioCtx.resume();
 
   ws = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone");
   ws.binaryType = "arraybuffer";
