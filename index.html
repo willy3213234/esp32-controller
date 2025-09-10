@@ -2,118 +2,147 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ESP32 遠端控制</title>
-  <link rel="manifest" href="manifest.json">
-  <link rel="icon" href="icon-192.png">
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ESP32 遠端雙向語音 + 相機</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 0; background: #f4f4f4; color: #222; text-align: center; padding: 1em; }
-    h1 { margin-top: 0; }
-    button {
-      font-size: 18px; padding: 12px 24px; margin: 10px;
-      border: none; border-radius: 8px;
-      background: #2c3e50; color: white; cursor: pointer;
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      background: #111;
+      color: #fff;
+      text-align: center;
+      padding: 20px;
     }
-    button:disabled { background: #999; cursor: not-allowed; }
-    video { width: 100%; max-width: 480px; border-radius: 12px; background: black; }
+    video, img {
+      max-width: 100%;
+      border-radius: 12px;
+      background: #000;
+    }
+    button {
+      font-size: 16px;
+      padding: 10px 20px;
+      margin: 10px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
-  <h1>ESP32 控制面板</h1>
-  <p id="status">🔄 連線中...</p>
+  <h2>ESP32 遠端雙向語音 + 相機控制</h2>
+  <img id="cam" src="" alt="ESP32 Cam Stream">
   <div>
-    <button id="startMic" onclick="startMic()">🎙️ 開始說話</button>
-    <button id="stopMic" onclick="stopMic()">🔇 停止說話</button>
-    <button id="snapshot" onclick="snapshot()">📷 快照</button>
-  </div>
-  <div>
-    <video id="cam" autoplay playsinline></video>
+    <button onclick="startMic()">🎙️ 開始雙向語音</button>
+    <button onclick="stopMic()">🛑 停止語音</button>
+    <button onclick="shot()">📸 快照</button>
   </div>
 
-  <script>
-    let ws;
+<script>
+let ws, audioCtx, micNode, srcNode, running = false;
+const SR = 16000;
 
-    function connect() {
-      const status = document.getElementById("status");
-      ws = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone");
+async function ensureCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SR });
+    if (audioCtx.state === 'suspended') {
+      try { await audioCtx.resume(); } catch (e) {}
+    }
 
-      ws.onopen = () => {
-        console.log("✅ WebSocket 已連線");
-        status.textContent = "🟢 已連線";
-        enableButtons(true);
-      };
-
-      ws.onclose = (e) => {
-        console.warn("🔴 WebSocket 斷線", e);
-        status.textContent = `🔴 離線（${e.code}）`;
-        enableButtons(false);
-      };
-
-      ws.onerror = (e) => {
-        console.error("⚠️ WebSocket 錯誤", e);
-        status.textContent = "⚠️ 錯誤";
-        alert("無法連線至 ESP32 Server，請確認 Render 是否啟動");
-      };
-
-      ws.onmessage = (e) => {
-        if (typeof e.data === 'string') {
-          console.log("📨 收到文字資料：", e.data);
-        } else if (e.data instanceof Blob) {
-          console.log("📨 收到 BLOB 音訊資料，大小：", e.data.size);
-          const audioCtx = new AudioContext();
-          const reader = new FileReader();
-          reader.onload = () => {
-            audioCtx.decodeAudioData(reader.result).then(buffer => {
-              const source = audioCtx.createBufferSource();
-              source.buffer = buffer;
-              source.connect(audioCtx.destination);
-              source.start();
-            });
-          };
-          reader.readAsArrayBuffer(e.data);
+    const blob = new Blob([`
+      class PCMProcessor extends AudioWorkletProcessor {
+        constructor() {
+          super(); this.acc = []; this.target = 1024;
         }
-      };
-    }
-
-    function enableButtons(enable) {
-      document.getElementById("startMic").disabled = !enable;
-      document.getElementById("stopMic").disabled = !enable;
-      document.getElementById("snapshot").disabled = !enable;
-    }
-
-    function startMic() {
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        alert("WebSocket 尚未連線，無法開始說話");
-        return;
+        process(inputs, outputs) {
+          const input = inputs[0], output = outputs[0];
+          if (!input || !input.length) return true;
+          const ch0 = input[0];
+          if (!ch0) return true;
+          output[0].set(ch0);
+          this.acc.push(...ch0);
+          while (this.acc.length >= this.target) {
+            const s = this.acc.splice(0, this.target);
+            const pcm = new Int16Array(s.length);
+            for (let i = 0; i < s.length; i++) {
+              let v = Math.max(-1, Math.min(1, s[i]));
+              pcm[i] = v < 0 ? v * 0x8000 : v * 0x7FFF;
+            }
+            this.port.postMessage(pcm.buffer, [pcm.buffer]);
+          }
+          return true;
+        }
       }
-      console.log("👉 傳送 START_MIC");
-      ws.send("START_MIC");
+      registerProcessor('pcm-processor', PCMProcessor);
+    `], { type: 'application/javascript' });
+    const url = URL.createObjectURL(blob);
+    await audioCtx.audioWorklet.addModule(url);
+  }
+}
+
+async function startMic() {
+  if (running) return;
+  running = true;
+  await ensureCtx();
+
+  ws = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone");
+  ws.binaryType = "arraybuffer";
+
+  ws.onmessage = async (event) => {
+    let ab = event.data;
+    if (!(ab instanceof ArrayBuffer)) {
+      if (ab?.arrayBuffer) ab = await ab.arrayBuffer();
+      else return;
     }
 
-    function stopMic() {
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        alert("WebSocket 尚未連線，無法停止說話");
-        return;
-      }
-      console.log("👉 傳送 STOP_MIC");
-      ws.send("STOP_MIC");
+    // 若是 JPEG 圖片（相機快照）
+    if (ab[0] === 0xFF && ab[1] === 0xD8) {
+      const blob = new Blob([ab], { type: "image/jpeg" });
+      document.getElementById("cam").src = URL.createObjectURL(blob);
+      return;
     }
 
-    function snapshot() {
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        alert("WebSocket 尚未連線，無法快照");
-        return;
-      }
-      console.log("👉 傳送 SNAPSHOT");
-      ws.send("SNAPSHOT");
-    }
+    // 音訊播放
+    if (!ab || ab.byteLength < 2) return;
+    const pcm16 = new Int16Array(ab);
+    const f32 = new Float32Array(pcm16.length);
+    for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768.0;
+    const buf = audioCtx.createBuffer(1, f32.length, SR);
+    buf.copyToChannel(f32, 0);
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(audioCtx.destination);
+    src.start();
+  };
 
-    window.onload = () => {
-      connect();
-      if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.register("service-worker.js");
-      }
-    };
-  </script>
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  srcNode = audioCtx.createMediaStreamSource(stream);
+  micNode = new AudioWorkletNode(audioCtx, "pcm-processor", {
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [1]
+  });
+  const sink = audioCtx.createGain();
+  sink.gain.value = 0.0;
+  micNode.connect(sink).connect(audioCtx.destination);
+  srcNode.connect(micNode);
+
+  micNode.port.onmessage = (ev) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(ev.data);
+    }
+  };
+}
+
+function stopMic() {
+  running = false;
+  try { srcNode && srcNode.disconnect(); } catch (_) {}
+  try { micNode && micNode.disconnect(); } catch (_) {}
+  try { ws && ws.readyState === WebSocket.OPEN && ws.close(); } catch (_) {}
+}
+
+function shot() {
+  ws && ws.readyState === WebSocket.OPEN && ws.send("SNAPSHOT");
+}
+</script>
 </body>
 </html>
