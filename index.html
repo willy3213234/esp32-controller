@@ -10,7 +10,7 @@
     let ws;
     function connect() {
       const status = document.getElementById("status");
-      ws = new WebSocket("https://esp32-server-st33.onrender.com"); // 修改成你的 render 位址
+      ws = new WebSocket("wss://esp32-server-st33.onrender.com"); // 修改成你的 render 位址
       ws.onopen = () => status.textContent = "🟢 已連線";
       ws.onclose = () => status.textContent = "🔴 離線";
       ws.onerror = () => status.textContent = "⚠️ 錯誤";
