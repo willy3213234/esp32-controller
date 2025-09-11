@@ -98,13 +98,24 @@ ws.onmessage = async (event) => {
   console.log("📥 收到音訊資料", ab);
 
   if (!(ab instanceof ArrayBuffer)) {
-    if (ab?.arrayBuffer) ab = await ab.arrayBuffer();
-    else return;
+    if (ab?.arrayBuffer) {
+      ab = await ab.arrayBuffer();
+      console.log("🔄 轉成 ArrayBuffer 成功");
+    } else {
+      console.warn("❌ 不是 ArrayBuffer，也不能轉");
+      return;
+    }
   }
 
-  if (ab[0] === 0xFF && ab[1] === 0xD8) {
-    const blob = new Blob([ab], { type: "image/jpeg" });
-    document.getElementById("cam").src = URL.createObjectURL(blob);
+  const u8 = new Uint8Array(ab);
+  console.log("🧾 前兩位:", u8[0].toString(16), u8[1].toString(16));
+
+  // JPEG 檢查
+  if (u8[0] === 0xFF && u8[1] === 0xD8) {
+    console.log("🖼️ 收到 JPEG 快照，長度:", u8.length);
+    const blob = new Blob([u8], { type: "image/jpeg" });
+    const url = URL.createObjectURL(blob);
+    document.getElementById("cam").src = url;
     return;
   }
 
