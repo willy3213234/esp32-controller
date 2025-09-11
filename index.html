@@ -147,10 +147,26 @@ function initWS() {
     }
 
     // 播放音訊
-Uncaught SyntaxError: await is only valid in async functions and the top level bodies of modules (at esp32-controller/:172:18)Understand this error
-esp32-controller/:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was receivedUnderstand this error
-esp32-controller/:21 Uncaught ReferenceError: startMic is not defined
-    at HTMLButtonElement.onclick (esp32-controller/:21:46)
+    const pcm16 = new Int16Array(ab);
+    const f32 = new Float32Array(pcm16.length);
+    for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768.0;
+
+    const buf = audioCtx.createBuffer(1, f32.length, SR);
+    buf.copyToChannel(f32, 0);
+
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(audioCtx.destination);
+    src.start();
+  };
+
+  ws.onclose = () => {
+    console.warn("🔌 WebSocket 關閉，將自動重連");
+    setTimeout(initWS, 3000);
+  };
+}
+
+initWS();
 </script>
 </body>
 </html>
