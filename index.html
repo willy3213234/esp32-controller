@@ -5,27 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ESP32 遠端雙向語音 + 相機</title>
   <style>
-    body {
-      font-family: sans-serif;
-      margin: 0;
-      background: #111;
-      color: #fff;
-      text-align: center;
-      padding: 20px;
-    }
-    video, img {
-      max-width: 100%;
-      border-radius: 12px;
-      background: #000;
-    }
-    button {
-      font-size: 16px;
-      padding: 10px 20px;
-      margin: 10px;
-      border-radius: 8px;
-      border: none;
-      cursor: pointer;
-    }
+    body { font-family: sans-serif; margin: 0; background: #111; color: #fff; text-align: center; padding: 20px; }
+    video, img { max-width: 100%; border-radius: 12px; background: #000; }
+    button { font-size: 16px; padding: 10px 20px; margin: 10px; border-radius: 8px; border: none; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -40,14 +22,13 @@
 <script>
 let ws, audioCtx, micNode, srcNode, running = false;
 const SR = 16000;
-let imageBuffer = []; // ⬅️ 用來暫存 JPEG 快照資料
+
+let camBuf = [], camLen = 0;
 
 async function ensureCtx() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SR });
-    if (audioCtx.state === 'suspended') {
-      try { await audioCtx.resume(); } catch (e) {}
-    }
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
 
     const blob = new Blob([`
       class PCMProcessor extends AudioWorkletProcessor {
@@ -98,35 +79,22 @@ async function startMic() {
 
     const u8 = new Uint8Array(ab);
 
-    // 📷 偵測是否為 JPEG 開頭
-    if (u8[0] === 0xFF && u8[1] === 0xD8) {
-      imageBuffer = [u8];
-      return;
-    }
+    // 是 JPEG 開頭或快照尚未完成 → 累加影像 buffer
+    if ((u8[0] === 0xFF && u8[1] === 0xD8) || camBuf.length > 0) {
+      camBuf.push(ab);
+      camLen += ab.byteLength;
 
-    // 📷 若正在組合 JPEG（已收到開頭）
-    if (imageBuffer.length > 0) {
-      imageBuffer.push(u8);
-
-      const len = u8.length;
-      if (len >= 2 && u8[len - 2] === 0xFF && u8[len - 1] === 0xD9) {
-        const totalLen = imageBuffer.reduce((acc, part) => acc + part.length, 0);
-        const full = new Uint8Array(totalLen);
-        let offset = 0;
-        for (const part of imageBuffer) {
-          full.set(part, offset);
-          offset += part.length;
-        }
-        const blob = new Blob([full], { type: "image/jpeg" });
-        document.getElementById("cam").src = URL.createObjectURL(blob);
-        imageBuffer = [];
-        console.log("📸 顯示快照成功，總長度:", totalLen);
-        return;
+      // 是 JPEG 結尾
+      if (u8[u8.length - 2] === 0xFF && u8[u8.length - 1] === 0xD9) {
+        const full = new Blob(camBuf, { type: "image/jpeg" });
+        document.getElementById("cam").src = URL.createObjectURL(full);
+        camBuf = []; camLen = 0;
       }
+
       return;
     }
 
-    // 🎧 播放音訊資料
+    // 否則是語音資料
     if (!ab || ab.byteLength < 2) return;
     const pcm16 = new Int16Array(ab);
     const f32 = new Float32Array(pcm16.length);
