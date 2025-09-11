@@ -2,184 +2,76 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ESP32 遠端雙向語音 + 相機</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>📷🎤 ESP32 雙向語音 + MJPEG 串流</title>
   <style>
-    body {
-      font-family: sans-serif;
-      margin: 0;
-      background: #111;
-      color: #fff;
-      text-align: center;
-      padding: 20px;
-    }
-    video, img {
-      max-width: 100%;
-      border-radius: 12px;
-      background: #000;
-    }
-    button {
-      font-size: 16px;
-      padding: 10px 20px;
-      margin: 10px;
-      border-radius: 8px;
-      border: none;
-      cursor: pointer;
-    }
+    body { font-family: sans-serif; background: #111; color: #eee; text-align: center; }
+    img { width: 100%; max-width: 640px; border-radius: 10px; background: #000; }
+    button { padding: 10px 16px; margin: 10px; font-size: 16px; border-radius: 8px; }
+    .status { margin: 10px 0; color: #6f6; }
   </style>
 </head>
 <body>
-  <h2>ESP32 遠端雙向語音 + 相機控制</h2>
-  <img id="cam" src="" alt="ESP32 Cam Stream">
+  <h2>🎥 MJPEG 串流 + 🎤 雙向語音</h2>
+  <img id="cam" src="http://192.168.0.78:80/stream" alt="Camera Stream" />
   <div>
-    <button onclick="startMic()">🎙️ 開始雙向語音</button>
+    <button onclick="startMic()">🎙️ 開始傳送語音</button>
     <button onclick="stopMic()">🛑 停止語音</button>
-    <button onclick="shot()">📸 快照</button>
   </div>
+  <div class="status" id="status">等待連線中...</div>
 
-<script>
-let ws, audioCtx, micNode, srcNode, running = false, imageBuffer = [];
-const SR = 16000;
+  <script>
+    const statusEl = document.getElementById("status");
+    const wsOut = new WebSocket("wss://esp32-server-st33.onrender.com/fromESP");
+    const wsIn  = new WebSocket("wss://esp32-server-st33.onrender.com/toESP");
 
-async function ensureCtx() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SR });
-    if (audioCtx.state === 'suspended') {
-      try { await audioCtx.resume(); } catch (e) {}
-    }
+    let audioCtx;
+    let workletNode;
+    let micStream;
 
-    const blob = new Blob([`
-      class PCMProcessor extends AudioWorkletProcessor {
-        constructor() {
-          super(); this.acc = []; this.target = 1024;
-        }
-        process(inputs, outputs) {
-          const input = inputs[0], output = outputs[0];
-          if (!input || !input.length) return true;
-          const ch0 = input[0];
-          if (!ch0) return true;
-          output[0].set(ch0);
-          this.acc.push(...ch0);
-          while (this.acc.length >= this.target) {
-            const s = this.acc.splice(0, this.target);
-            const pcm = new Int16Array(s.length);
-            for (let i = 0; i < s.length; i++) {
-              let v = Math.max(-1, Math.min(1, s[i]));
-              pcm[i] = v < 0 ? v * 0x8000 : v * 0x7FFF;
-            }
-            this.port.postMessage(pcm.buffer, [pcm.buffer]);
-          }
-          return true;
-        }
+    // 🎧 播放 ESP32 傳來的音訊
+    wsOut.binaryType = "arraybuffer";
+    wsOut.onmessage = async (event) => {
+      if (!audioCtx) {
+        audioCtx = new AudioContext();
+        await audioCtx.audioWorklet.addModule("worklet.js");
+        workletNode = new AudioWorkletNode(audioCtx, "pcm-player");
+        workletNode.connect(audioCtx.destination);
       }
-      registerProcessor('pcm-processor', PCMProcessor);
-    `], { type: 'application/javascript' });
-    const url = URL.createObjectURL(blob);
-    await audioCtx.audioWorklet.addModule(url);
-  }
-}
+      const pcm = new Int16Array(event.data);
+      workletNode.port.postMessage(pcm);
+    };
 
-async function startMic() {
-  if (running) return;
-  running = true;
-  await ensureCtx();
-  await audioCtx.resume();
-
-  ws = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone");
-  ws.binaryType = "arraybuffer";
-
-  ws.onopen = () => {
-  console.log("✅ WebSocket toPhone connected");
-  ws.send("START_MIC");  // 加這一行解決問題
-  ws.send("SNAPSHOT");
-};
-
-ws.onmessage = async (event) => {
-  let ab = event.data;
-  if (!(ab instanceof ArrayBuffer)) {
-    if (ab?.arrayBuffer) ab = await ab.arrayBuffer();
-    else return;
-  }
-
-  const u8 = new Uint8Array(ab);
-
-  // 📸 若為 JPEG 開頭，清空暫存並開始收集
-  if (u8[0] === 0xFF && u8[1] === 0xD8) {
-    imageBuffer = [u8];
-    return;
-  }
-
-  // 📸 若正在收集圖像
-  if (imageBuffer.length > 0) {
-    imageBuffer.push(u8);
-
-    // 🧪 嘗試判斷結尾（JPEG 結尾為 FF D9）
-    if (u8[u8.length - 2] === 0xFF && u8[u8.length - 1] === 0xD9) {
-      const full = new Uint8Array(imageBuffer.reduce((sum, arr) => sum + arr.length, 0));
-      let offset = 0;
-      for (const part of imageBuffer) {
-        full.set(part, offset);
-        offset += part.length;
-      }
-      const blob = new Blob([full], { type: "image/jpeg" });
-      document.getElementById("cam").src = URL.createObjectURL(blob);
-      imageBuffer = [];
-      console.log("🖼️ 組裝成功並顯示快照", full.length, "bytes");
+    // 🎙️ 錄音並傳送音訊到 ESP32
+    async function startMic() {
+      statusEl.innerText = "🎙️ 錄音中...";
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioCtx = new AudioContext();
+      const source = audioCtx.createMediaStreamSource(micStream);
+      const processor = audioCtx.createScriptProcessor(1024, 1, 1);
+      processor.onaudioprocess = (e) => {
+        const input = e.inputBuffer.getChannelData(0);
+        const pcm = new Int16Array(input.length);
+        for (let i = 0; i < input.length; i++) {
+          let s = input[i] * 32767;
+          pcm[i] = Math.max(-32768, Math.min(32767, s));
+        }
+        if (wsIn.readyState === WebSocket.OPEN) {
+          wsIn.send(pcm);
+        }
+      };
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
     }
-    return;
-  }
 
-  if (!ab || ab.byteLength < 2) {
-    console.warn("⚠️ 收到資料長度過短");
-    return;
-  }
-
-  const pcm16 = new Int16Array(ab);
-  console.log("📊 解析為 Int16Array:", pcm16);
-
-  const f32 = new Float32Array(pcm16.length);
-  for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768.0;
-
-  const buf = audioCtx.createBuffer(1, f32.length, SR);
-  buf.copyToChannel(f32, 0);
-
-  const src = audioCtx.createBufferSource();
-  src.buffer = buf;
-  src.connect(audioCtx.destination);
-  src.start();
-  console.log("🔊 播放中，樣本數:", f32.length);
-};
-
-
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  srcNode = audioCtx.createMediaStreamSource(stream);
-  micNode = new AudioWorkletNode(audioCtx, "pcm-processor", {
-    numberOfInputs: 1,
-    numberOfOutputs: 1,
-    outputChannelCount: [1]
-  });
-  const sink = audioCtx.createGain();
-  sink.gain.value = 0.0;
-  micNode.connect(sink).connect(audioCtx.destination);
-  srcNode.connect(micNode);
-
-  micNode.port.onmessage = (ev) => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(ev.data);
+    function stopMic() {
+      statusEl.innerText = "🛑 麥克風關閉";
+      if (micStream) micStream.getTracks().forEach(t => t.stop());
     }
-  };
-}
 
-function stopMic() {
-  running = false;
-  try { srcNode && srcNode.disconnect(); } catch (_) {}
-  try { micNode && micNode.disconnect(); } catch (_) {}
-  try { ws && ws.readyState === WebSocket.OPEN && ws.close(); } catch (_) {}
-}
-
-function shot() {
-  ws && ws.readyState === WebSocket.OPEN && ws.send("SNAPSHOT");
-}
-</script>
+    wsOut.onopen = () => statusEl.innerText = "✅ 影像與語音連線成功";
+    wsOut.onerror = () => statusEl.innerText = "❌ 語音接收錯誤";
+    wsIn.onerror = () => statusEl.innerText = "❌ 語音傳送錯誤";
+  </script>
 </body>
 </html>
