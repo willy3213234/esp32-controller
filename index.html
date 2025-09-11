@@ -93,32 +93,42 @@ async function startMic() {
   ws.send("START_MIC");  // 加這一行解決問題
 };
 
-  ws.onmessage = async (event) => {
-    let ab = event.data;
-    if (!(ab instanceof ArrayBuffer)) {
-      if (ab?.arrayBuffer) ab = await ab.arrayBuffer();
-      else return;
-    }
+ws.onmessage = async (event) => {
+  let ab = event.data;
+  console.log("📥 收到音訊資料", ab);
 
-    // 若是 JPEG 圖片（相機快照）
-    if (ab[0] === 0xFF && ab[1] === 0xD8) {
-      const blob = new Blob([ab], { type: "image/jpeg" });
-      document.getElementById("cam").src = URL.createObjectURL(blob);
-      return;
-    }
+  if (!(ab instanceof ArrayBuffer)) {
+    if (ab?.arrayBuffer) ab = await ab.arrayBuffer();
+    else return;
+  }
 
-    // 音訊播放
-    if (!ab || ab.byteLength < 2) return;
-    const pcm16 = new Int16Array(ab);
-    const f32 = new Float32Array(pcm16.length);
-    for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768.0;
-    const buf = audioCtx.createBuffer(1, f32.length, SR);
-    buf.copyToChannel(f32, 0);
-    const src = audioCtx.createBufferSource();
-    src.buffer = buf;
-    src.connect(audioCtx.destination);
-    src.start();
-  };
+  if (ab[0] === 0xFF && ab[1] === 0xD8) {
+    const blob = new Blob([ab], { type: "image/jpeg" });
+    document.getElementById("cam").src = URL.createObjectURL(blob);
+    return;
+  }
+
+  if (!ab || ab.byteLength < 2) {
+    console.warn("⚠️ 收到資料長度過短");
+    return;
+  }
+
+  const pcm16 = new Int16Array(ab);
+  console.log("📊 解析為 Int16Array:", pcm16);
+
+  const f32 = new Float32Array(pcm16.length);
+  for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768.0;
+
+  const buf = audioCtx.createBuffer(1, f32.length, SR);
+  buf.copyToChannel(f32, 0);
+
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(audioCtx.destination);
+  src.start();
+  console.log("🔊 播放中，樣本數:", f32.length);
+};
+
 
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   srcNode = audioCtx.createMediaStreamSource(stream);
