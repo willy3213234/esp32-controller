@@ -70,6 +70,11 @@ async function startMic() {
   ws = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone");
   ws.binaryType = "arraybuffer";
 
+  ws.onopen = () => {
+  console.log("✅ WebSocket toPhone connected");
+  ws.send("START_MIC");
+};
+
   ws.onmessage = async (event) => {
     let ab = event.data;
     if (!(ab instanceof ArrayBuffer)) {
