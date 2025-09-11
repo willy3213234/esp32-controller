@@ -147,61 +147,10 @@ function initWS() {
     }
 
     // 播放音訊
-  if (!ab || ab.byteLength < 2) {
-    console.warn("⚠️ 收到資料長度過短");
-    return;
-  }
-
-  const pcm16 = new Int16Array(ab);
-  console.log("📊 解析為 Int16Array:", pcm16);
-
-  const f32 = new Float32Array(pcm16.length);
-  for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768.0;
-
-  const buf = audioCtx.createBuffer(1, f32.length, SR);
-  buf.copyToChannel(f32, 0);
-
-  const src = audioCtx.createBufferSource();
-  src.buffer = buf;
-  src.connect(audioCtx.destination);
-  src.start();
-  console.log("🔊 播放中，樣本數:", f32.length);
-};
-
-
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  srcNode = audioCtx.createMediaStreamSource(stream);
-  micNode = new AudioWorkletNode(audioCtx, "pcm-processor", {
-    numberOfInputs: 1,
-    numberOfOutputs: 1,
-    outputChannelCount: [1]
-  });
-  const sink = audioCtx.createGain();
-  sink.gain.value = 0.0;
-  micNode.connect(sink).connect(audioCtx.destination);
-  srcNode.connect(micNode);
-
-  micNode.port.onmessage = (ev) => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(ev.data);
-    }
-  };
-}
-
-function stopMic() {
-  running = false;
-  try { srcNode && srcNode.disconnect(); } catch (_) {}
-  try { micNode && micNode.disconnect(); } catch (_) {}
-  try { ws && ws.readyState === WebSocket.OPEN && ws.close(); } catch (_) {}
-}
-
-  ws.onclose = () => {
-    console.warn("🔌 WebSocket 關閉，將自動重連");
-    setTimeout(initWS, 3000);
-  };
-}
-
-initWS();
+Uncaught SyntaxError: await is only valid in async functions and the top level bodies of modules (at esp32-controller/:172:18)Understand this error
+esp32-controller/:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was receivedUnderstand this error
+esp32-controller/:21 Uncaught ReferenceError: startMic is not defined
+    at HTMLButtonElement.onclick (esp32-controller/:21:46)
 </script>
 </body>
 </html>
