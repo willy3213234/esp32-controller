@@ -41,38 +41,32 @@
     };
 
 ws.onmessage = (event) => {
-  // 若是字串類型，代表是控制訊號（忽略或另處理）
-  if (typeof event.data === "string") {
-    console.log("📩 收到訊息：", event.data);
-    return;
-  }
-
-  // 如果是圖片資料（二進位）
+  const ab = event.data;  // ← 這行少了，這是錯誤關鍵
   const camEl = document.getElementById("cam");
   if (!camEl) return;
 
-  const blob = new Blob([event.data], { type: "image/jpeg" });
-  const url = URL.createObjectURL(blob);
+  // 顯示影像
+  if (ab.byteLength > 1000) {  // 粗略判斷是否為影像
+    const blob = new Blob([ab], { type: "image/jpeg" });
+    const url = URL.createObjectURL(blob);
+    if (lastUrl) URL.revokeObjectURL(lastUrl);
+    lastUrl = url;
+    camEl.src = url;
+    console.log("🎞️ 顯示圖片", blob);
+    return;
+  }
 
-  if (lastUrl) URL.revokeObjectURL(lastUrl);
-  lastUrl = url;
-
-  camEl.src = url;
-  console.log("🎞️ 顯示圖片", blob);
+  // 播放聲音（Int16 PCM）
+  const pcm16 = new Int16Array(ab);
+  const f32 = new Float32Array(pcm16.length);
+  for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768.0;
+  const buf = audioCtx.createBuffer(1, f32.length, SR);
+  buf.copyToChannel(f32, 0);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(audioCtx.destination);
+  src.start();
 };
-
-
-      if (ab.byteLength < 2) return;
-      const pcm16 = new Int16Array(ab);
-      const f32 = new Float32Array(pcm16.length);
-      for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768.0;
-      const buf = audioCtx.createBuffer(1, f32.length, SR);
-      buf.copyToChannel(f32, 0);
-      const src = audioCtx.createBufferSource();
-      src.buffer = buf;
-      src.connect(audioCtx.destination);
-      src.start();
-    };
 
     ws.onclose = () => console.warn("❌ WebSocket 中斷");
   }
