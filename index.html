@@ -41,20 +41,26 @@
     };
 
 ws.onmessage = (event) => {
+  // 若是字串類型，代表是控制訊號（忽略或另處理）
+  if (typeof event.data === "string") {
+    console.log("📩 收到訊息：", event.data);
+    return;
+  }
+
+  // 如果是圖片資料（二進位）
   const camEl = document.getElementById("cam");
   if (!camEl) return;
 
-  // 建立新的 Blob 並轉為 URL
   const blob = new Blob([event.data], { type: "image/jpeg" });
   const url = URL.createObjectURL(blob);
 
-  // 釋放上一次的 URL，避免記憶體爆炸
   if (lastUrl) URL.revokeObjectURL(lastUrl);
   lastUrl = url;
 
   camEl.src = url;
   console.log("🎞️ 顯示圖片", blob);
 };
+
 
       if (ab.byteLength < 2) return;
       const pcm16 = new Int16Array(ab);
