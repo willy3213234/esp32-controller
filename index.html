@@ -23,157 +23,141 @@
   </div>
 
 <script>
-let ws, audioCtx, micNode, srcNode, running = false, imageBuffer = [];
-let camOn = false;
-const SR = 16000;
+(async () => {
+  const SR = 16000;
+  let ws, audioCtx, micNode, srcNode, imageBuffer = [];
+  let running = false;
+  let camOn = false;
 
-  ws = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone");
-  ws.binaryType = "arraybuffer";
+  const camEl = document.getElementById("cam");
 
-  ws.onopen = () => {
-  console.log("✅ WebSocket toPhone connected");
-  ws.send("START_MIC");  // 加這一行解決問題
-};
+  function initWebSocket() {
+    ws = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone");
+    ws.binaryType = "arraybuffer";
 
-async function ensureCtx() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SR });
-    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    ws.onopen = () => {
+      console.log("✅ WebSocket 連線成功");
+      if (camOn) ws.send("START_CAM");
+    };
 
-    const blob = new Blob([`
-      class PCMProcessor extends AudioWorkletProcessor {
-        constructor() {
-          super(); this.acc = []; this.target = 1024;
-        }
-        process(inputs) {
-          const ch0 = inputs[0]?.[0]; if (!ch0) return true;
-          this.acc.push(...ch0);
-          while (this.acc.length >= this.target) {
-            const s = this.acc.splice(0, this.target);
-            const pcm = new Int16Array(s.length);
-            for (let i = 0; i < s.length; i++) {
-              let v = Math.max(-1, Math.min(1, s[i]));
-              pcm[i] = v < 0 ? v * 0x8000 : v * 0x7FFF;
-            }
-            this.port.postMessage(pcm.buffer, [pcm.buffer]);
+    ws.onmessage = async (event) => {
+      const ab = event.data;
+      const u8 = new Uint8Array(ab);
+
+      if (u8[0] === 0xFF && u8[1] === 0xD8) {
+        imageBuffer = [u8];
+        return;
+      }
+
+      if (imageBuffer.length > 0) {
+        imageBuffer.push(u8);
+
+        if (u8[u8.length - 2] === 0xFF && u8[u8.length - 1] === 0xD9) {
+          const full = new Uint8Array(imageBuffer.reduce((sum, part) => sum + part.length, 0));
+          let offset = 0;
+          for (const part of imageBuffer) {
+            full.set(part, offset);
+            offset += part.length;
           }
-          return true;
+
+          const blob = new Blob([full], { type: "image/jpeg" });
+          const url = URL.createObjectURL(blob);
+          camEl.src = url;
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          imageBuffer = [];
         }
-      }
-      registerProcessor('pcm-processor', PCMProcessor);
-    `], { type: 'application/javascript' });
-    const url = URL.createObjectURL(blob);
-    await audioCtx.audioWorklet.addModule(url);
-  }
-}
-
-async function startMic() {
-  if (running) return;
-  running = true;
-  await ensureCtx();
-  await audioCtx.resume();
-
-
-
-ws.onmessage = async (event) => {
-  let ab = event.data;
-  const u8 = new Uint8Array(ab);
-  console.log("📥 收到資料", u8.length, "bytes");
-
-  if (u8[0] === 0xFF && u8[1] === 0xD8) {
-    console.log("📸 檢測到 JPEG 開頭");
-    imageBuffer = [u8];
-    return;
-  }
-
-  if (imageBuffer.length > 0) {
-    imageBuffer.push(u8);
-
-    if (u8[u8.length - 2] === 0xFF && u8[u8.length - 1] === 0xD9) {
-      console.log("📸 檢測到 JPEG 結尾");
-
-      const totalLen = imageBuffer.reduce((sum, arr) => sum + arr.length, 0);
-      const full = new Uint8Array(totalLen);
-      let offset = 0;
-      for (const part of imageBuffer) {
-        full.set(part, offset);
-        offset += part.length;
+        return;
       }
 
-      const blob = new Blob([full], { type: "image/jpeg" });
+      if (ab.byteLength < 2) return;
+      const pcm16 = new Int16Array(ab);
+      const f32 = new Float32Array(pcm16.length);
+      for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768.0;
+      const buf = audioCtx.createBuffer(1, f32.length, SR);
+      buf.copyToChannel(f32, 0);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audioCtx.destination);
+      src.start();
+    };
+
+    ws.onclose = () => console.warn("❌ WebSocket 中斷");
+  }
+
+  async function ensureAudioCtx() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SR });
+      const blob = new Blob([`
+        class PCMProcessor extends AudioWorkletProcessor {
+          constructor() { super(); this.buffer = []; this.target = 1024; }
+          process(inputs) {
+            const input = inputs[0][0];
+            if (!input) return true;
+            this.buffer.push(...input);
+            while (this.buffer.length >= this.target) {
+              const out = new Int16Array(this.target);
+              for (let i = 0; i < this.target; i++) {
+                let s = this.buffer.shift();
+                out[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+              }
+              this.port.postMessage(out.buffer, [out.buffer]);
+            }
+            return true;
+          }
+        }
+        registerProcessor("pcm-processor", PCMProcessor);
+      `], { type: "application/javascript" });
       const url = URL.createObjectURL(blob);
-      document.getElementById("cam").src = url;
-
-      console.log("🖼️ 顯示圖像成功，長度", full.length);
-      imageBuffer = [];
+      await audioCtx.audioWorklet.addModule(url);
     }
-    return;
-  }
-}
-
-
-  if (!ab || ab.byteLength < 2) {
-    console.warn("⚠️ 收到資料長度過短");
-    return;
   }
 
-  const pcm16 = new Int16Array(ab);
-  console.log("📊 解析為 Int16Array:", pcm16);
+  window.startMic = async function() {
+    if (running) return;
+    running = true;
+    await ensureAudioCtx();
+    await audioCtx.resume();
 
-  const f32 = new Float32Array(pcm16.length);
-  for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768.0;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    srcNode = audioCtx.createMediaStreamSource(stream);
+    micNode = new AudioWorkletNode(audioCtx, "pcm-processor");
+    micNode.port.onmessage = (ev) => {
+      if (ws?.readyState === WebSocket.OPEN) ws.send(ev.data);
+    };
 
-  const buf = audioCtx.createBuffer(1, f32.length, SR);
-  buf.copyToChannel(f32, 0);
+    const silent = audioCtx.createGain(); silent.gain.value = 0;
+    micNode.connect(silent).connect(audioCtx.destination);
+    srcNode.connect(micNode);
 
-  const src = audioCtx.createBufferSource();
-  src.buffer = buf;
-  src.connect(audioCtx.destination);
-  src.start();
-  console.log("🔊 播放中，樣本數:", f32.length);
-};
+    ws?.send("START_MIC");
+    console.log("🎙️ 麥克風開始傳送");
+  };
 
+  window.stopMic = function() {
+    running = false;
+    try { srcNode?.disconnect(); } catch (_) {}
+    try { micNode?.disconnect(); } catch (_) {}
+    ws?.send("STOP_MIC");
+    console.log("🔇 麥克風停止");
+  };
 
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  srcNode = audioCtx.createMediaStreamSource(stream);
-  micNode = new AudioWorkletNode(audioCtx, "pcm-processor", {
-    numberOfInputs: 1,
-    numberOfOutputs: 1,
-    outputChannelCount: [1]
-  });
-  const sink = audioCtx.createGain();
-  sink.gain.value = 0.0;
-  micNode.connect(sink).connect(audioCtx.destination);
-  srcNode.connect(micNode);
-
-  micNode.port.onmessage = (ev) => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(ev.data);
+  window.startCam = function() {
+    if (ws?.readyState === WebSocket.OPEN) {
+      camOn = true;
+      ws.send("START_CAM");
+      console.log("📷 開始鏡頭");
     }
   };
-}
 
-function stopMic() {
-  running = false;
-  try { srcNode?.disconnect(); } catch (_) {}
-  try { micNode?.disconnect(); } catch (_) {}
-  ws?.send("STOP_MIC");
-  console.log("🛑 語音停止");
-}
+  window.stopCam = function() {
+    camOn = false;
+    ws?.send("STOP_CAM");
+    console.log("🛑 停止鏡頭");
+  };
 
-function startCam() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  camOn = true;
-  ws.send("START_CAM");
-  console.log("📷 啟動相機串流");
-}
-
-function stopCam() {
-  camOn = false;
-  ws?.send("STOP_CAM");
-  console.log("🛑 關閉相機串流");
-}
-
+  // 初始化 WebSocket
+  initWebSocket();
+})();
 </script>
 </body>
 </html>
