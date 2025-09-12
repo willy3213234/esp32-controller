@@ -61,6 +61,7 @@
           }
 
           const blob = new Blob([full], { type: "image/jpeg" });
+          console.log("🎞️ 收到完整 JPEG", blob);
           const url = URL.createObjectURL(blob);
           camEl.src = url;
           setTimeout(() => URL.revokeObjectURL(url), 1000);
