@@ -27,6 +27,14 @@ let ws, audioCtx, micNode, srcNode, running = false, imageBuffer = [];
 let camOn = false;
 const SR = 16000;
 
+  ws = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone");
+  ws.binaryType = "arraybuffer";
+
+  ws.onopen = () => {
+  console.log("✅ WebSocket toPhone connected");
+  ws.send("START_MIC");  // 加這一行解決問題
+};
+
 async function ensureCtx() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SR });
@@ -65,13 +73,7 @@ async function startMic() {
   await ensureCtx();
   await audioCtx.resume();
 
-  ws = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone");
-  ws.binaryType = "arraybuffer";
 
-  ws.onopen = () => {
-  console.log("✅ WebSocket toPhone connected");
-  ws.send("START_MIC");  // 加這一行解決問題
-};
 
 ws.onmessage = async (event) => {
   let ab = event.data;
