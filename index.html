@@ -29,7 +29,7 @@
   let running = false;
   let camOn = false;
 
-  const camEl = document.getElementById("cam").src = url;
+  document.getElementById("cam").src = url; 
 
   function initWebSocket() {
     ws = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone");
@@ -62,7 +62,7 @@
 
           const blob = new Blob([full], { type: "image/jpeg" });
           const url = URL.createObjectURL(blob);
-          camEl.src = url;
+          document.getElementById("cam").src = url;
           setTimeout(() => URL.revokeObjectURL(url), 1000);
           imageBuffer = [];
         }
