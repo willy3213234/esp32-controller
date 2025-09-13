@@ -111,7 +111,11 @@ ws.onmessage = (event) => {
 
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     srcNode = audioCtx.createMediaStreamSource(stream);
-    micNode = new AudioWorkletNode(audioCtx, "pcm-processor");
+    micNode = new AudioWorkletNode(audioCtx, "pcm-processor", {
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [1]
+  });
     micNode.port.onmessage = (ev) => {
       if (ws?.readyState === WebSocket.OPEN) ws.send(ev.data);
     };
