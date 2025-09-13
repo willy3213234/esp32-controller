@@ -41,7 +41,7 @@
     };
 
 ws.onmessage = (event) => {
-  const ab = event.data;  // ← 這行少了，這是錯誤關鍵
+  const raw = new Uint8Array(event.data);
   const camEl = document.getElementById("cam");
   const type = raw[0];               // 讀取第一個 byte 作為標頭
   const payload = raw.slice(1);     // 剩下的就是實際資料
@@ -49,7 +49,7 @@ ws.onmessage = (event) => {
 
   // 顯示影像
   if (type === 0x01) {  // 粗略判斷是否為影像
-    const blob = new Blob([ab], { type: "image/jpeg" });
+    const blob = new Blob([payload], { type: "image/jpeg" });
     const url = URL.createObjectURL(blob);
     if (lastUrl) URL.revokeObjectURL(lastUrl);
     lastUrl = url;
@@ -60,7 +60,7 @@ ws.onmessage = (event) => {
 
   // 播放聲音（Int16 PCM）
   else if (type === 0x02) {
-  const pcm16 = new Int16Array(ab);
+  const pcm16 = new Int16Array(payload);
   const f32 = new Float32Array(pcm16.length);
   for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768.0;
   const buf = audioCtx.createBuffer(1, f32.length, SR);
