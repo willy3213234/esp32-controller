@@ -60,7 +60,7 @@ ws.onmessage = (event) => {
 
   // 播放聲音（Int16 PCM）
   else if (type === 0x02) {
-  const pcm16 = new Int16Array(payload);
+  const pcm16 = new Int16Array(payload.buffer);
   const f32 = new Float32Array(pcm16.length);
   for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768.0;
   const buf = audioCtx.createBuffer(1, f32.length, SR);
