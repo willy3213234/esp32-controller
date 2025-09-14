@@ -32,20 +32,24 @@
   function connectSockets() {
     ws_audio = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone/audio");
     ws_audio.binaryType = "arraybuffer";
-    ws_audio.onmessage = (event) => {
-      const raw = new Uint8Array(event.data);
-      if (raw[0] !== 0x02) return;
-        const audioBytes = raw.slice(1);
-      const pcm16 = new Int16Array(audioBytes.buffer); // ✅ 不再 offset=1
-      const f32 = new Float32Array(pcm16.length);
-      for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768;
-      const buf = audioCtx.createBuffer(1, f32.length, SR);
-      buf.copyToChannel(f32, 0);
-      const src = audioCtx.createBufferSource();
-      src.buffer = buf;
-      src.connect(audioCtx.destination);
-      src.start();
-    };
+ws_audio.onmessage = (event) => {
+  const raw = new Uint8Array(event.data);
+  if (raw[0] !== 0x02) return;
+
+  // 🟢 從第1 byte開始切出資料，確保對齊
+  const audioBytes = raw.slice(1);
+  const pcm16 = new Int16Array(audioBytes.buffer); // ✅ 不再 offset=1
+
+  const f32 = new Float32Array(pcm16.length);
+  for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768;
+
+  const buf = audioCtx.createBuffer(1, f32.length, SR);
+  buf.copyToChannel(f32, 0);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(audioCtx.destination);
+  src.start();
+};
 
     ws_video = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone/video");
     ws_video.binaryType = "arraybuffer";
