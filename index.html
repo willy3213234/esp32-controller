@@ -36,12 +36,14 @@ ws_audio.onmessage = (event) => {
   const raw = new Uint8Array(event.data);
   if (raw[0] !== 0x02) return;
 
-  // 🟢 從第1 byte開始切出資料，確保對齊
-  const audioBytes = raw.slice(1);
-  const pcm16 = new Int16Array(audioBytes.buffer); // ✅ 不再 offset=1
+  // 🟢 先丟掉標頭 0x02，再轉 Int16Array
+  const payload = raw.slice(1);
+  const pcm16 = new Int16Array(payload.buffer);
 
   const f32 = new Float32Array(pcm16.length);
-  for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768;
+  for (let i = 0; i < pcm16.length; i++) {
+    f32[i] = pcm16[i] / 32768.0;
+  }
 
   const buf = audioCtx.createBuffer(1, f32.length, SR);
   buf.copyToChannel(f32, 0);
