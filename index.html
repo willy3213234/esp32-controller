@@ -88,13 +88,18 @@
 
   window.startMic = async () => {
     if (running) return;
+    console.log("🎤 發送 START_MIC 到 ESP32");
     running = true;
     await ensureAudioCtx();
     await audioCtx.resume();
 
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     srcNode = audioCtx.createMediaStreamSource(stream);
-    micNode = new AudioWorkletNode(audioCtx, "pcm-processor", { numberOfInputs: 1, numberOfOutputs: 1 });
+    micNode = new AudioWorkletNode(audioCtx, "pcm-processor", {
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [1]
+  });
     micNode.port.onmessage = (ev) => {
       if (ws_audio?.readyState === 1) {
         const audioBuf = new Uint8Array(ev.data.byteLength + 1);
@@ -111,6 +116,7 @@
   };
 
   window.stopMic = () => {
+    console.log("🔇 發送 STOP_MIC 到 ESP32");
     running = false;
     try { srcNode?.disconnect(); } catch (_) {}
     try { micNode?.disconnect(); } catch (_) {}
@@ -119,12 +125,20 @@
 
   window.startCam = () => {
     camOn = true;
-    ws_video?.send("START_CAM");
+    if (ws_video?.readyState === 1) {
+      ws_video.send("START_CAM");
+      console.log("📷 發送 START_CAM 到 ESP32");
+    } else {
+      console.warn("⚠️ ws_video 尚未連線，無法啟用鏡頭");
+    }
   };
 
   window.stopCam = () => {
     camOn = false;
-    ws_video?.send("STOP_CAM");
+    if (ws_video?.readyState === 1) {
+      ws_video.send("STOP_CAM");
+      console.log("🛑 發送 STOP_CAM 到 ESP32");
+    }
   };
 
   connectSockets();
