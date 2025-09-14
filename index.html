@@ -35,7 +35,8 @@
     ws_audio.onmessage = (event) => {
       const raw = new Uint8Array(event.data);
       if (raw[0] !== 0x02) return;
-      const pcm16 = new Int16Array(raw.buffer, 1);
+        const audioBytes = raw.slice(1);
+      const pcm16 = new Int16Array(audioBytes.buffer); // ✅ 不再 offset=1
       const f32 = new Float32Array(pcm16.length);
       for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768;
       const buf = audioCtx.createBuffer(1, f32.length, SR);
