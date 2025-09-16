@@ -149,6 +149,9 @@ const B_CHUNK = 1024;
 let ws_lcd, v = document.getElementById('v'), c = document.getElementById('c');
 c.width = 240; c.height = 240;
 
+const FPS = 10;  // 限制為 10 張/秒
+const FRAME_INTERVAL = 1000 / FPS;
+
 async function sendFrame() {
   if (!ws_lcd || ws_lcd.readyState !== 1) return;
 
@@ -175,9 +178,9 @@ async function sendFrame() {
     await new Promise(r=>setTimeout(r,5));
   }
 
-  // 🟢 改成 requestAnimationFrame，與瀏覽器影像更新同步
-  requestAnimationFrame(sendFrame);
+  setTimeout(sendFrame, FRAME_INTERVAL);  // 🟢 限制 10fps，避免閃爍
 }
+
 
 document.getElementById('startLcd').onclick = async () => {
   const stream = await navigator.mediaDevices.getUserMedia({ video:true });
