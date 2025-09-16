@@ -3,15 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ESP32 雙 WebSocket 控制頁</title>
+  <title>ESP32 遠端控制面板</title>
   <style>
-    body { font-family: system-ui, sans-serif; background: #111; color: #fff; text-align: center; padding: 20px; }
-    img { width: 100%; max-width: 480px; background: #000; border-radius: 12px; }
-    button { margin: 10px; padding: 10px 20px; font-size: 16px; border-radius: 8px; cursor: pointer; }
+    body { font-family: system-ui, sans-serif; background: #111; color: #fff; padding: 20px; display: flex; gap: 40px; flex-wrap: wrap; }
+    section { flex: 1 1 400px; background: #222; border-radius: 16px; padding: 20px; }
+    h2 { margin-top: 0; }
+    img, video, canvas { width: 100%; max-width: 480px; background: #000; border-radius: 12px; display: block; margin: 10px auto; }
+    button { margin: 5px; padding: 10px 20px; font-size: 16px; border-radius: 8px; cursor: pointer; }
   </style>
 </head>
 <body>
-  <h2>ESP32 雙向語音 + 相機串流</h2>
+
+<!-- 🎙️🎥 ESP32-S3：雙向語音 + 相機串流 -->
+<section>
+  <h2>ESP32-S3 🎙️ 雙向語音 + 📸 相機串流</h2>
   <img id="cam" alt="Camera Stream" />
   <div>
     <button onclick="startCam()">📷 啟動鏡頭</button>
@@ -19,39 +24,43 @@
     <button onclick="startMic()">🎙️ 開始語音</button>
     <button onclick="stopMic()">🔇 停止語音</button>
   </div>
+</section>
+
+<!-- 📱📤 手機影像 ➜ ESP32-LCD 顯示 -->
+<section>
+  <h2>📱 手機影像 ➜ 🖥️ ESP32-LCD 顯示</h2>
+  <video id="v" playsinline muted></video>
+  <canvas id="c" hidden></canvas>
+  <div>
+    <button id="startLcd">開始傳送</button>
+  </div>
+</section>
 
 <script type="module">
 (async () => {
+  // ======================== 🎙️ 音訊 + 相機 ========================
   const SR = 16000;
   let ws_audio, ws_video, micNode, srcNode, audioCtx;
   let camOn = false, running = false;
   let lastUrl = null;
-
   const camEl = document.getElementById("cam");
 
   function connectSockets() {
     ws_audio = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone/audio");
     ws_audio.binaryType = "arraybuffer";
-ws_audio.onmessage = (event) => {
-  const raw = new Uint8Array(event.data);
-  if (raw[0] !== 0x02) return;
-
-  // 🟢 先丟掉標頭 0x02，再轉 Int16Array
-  const payload = raw.slice(1);
-  const pcm16 = new Int16Array(payload.buffer);
-
-  const f32 = new Float32Array(pcm16.length);
-  for (let i = 0; i < pcm16.length; i++) {
-    f32[i] = pcm16[i] / 32768.0;
-  }
-
-  const buf = audioCtx.createBuffer(1, f32.length, SR);
-  buf.copyToChannel(f32, 0);
-  const src = audioCtx.createBufferSource();
-  src.buffer = buf;
-  src.connect(audioCtx.destination);
-  src.start();
-};
+    ws_audio.onmessage = (event) => {
+      const raw = new Uint8Array(event.data);
+      if (raw[0] !== 0x02) return;
+      const pcm16 = new Int16Array(raw.buffer, 1);
+      const f32 = new Float32Array(pcm16.length);
+      for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768.0;
+      const buf = audioCtx.createBuffer(1, f32.length, SR);
+      buf.copyToChannel(f32, 0);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audioCtx.destination);
+      src.start();
+    };
 
     ws_video = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone/video");
     ws_video.binaryType = "arraybuffer";
@@ -95,18 +104,12 @@ ws_audio.onmessage = (event) => {
 
   window.startMic = async () => {
     if (running) return;
-    console.log("🎤 發送 START_MIC 到 ESP32");
     running = true;
     await ensureAudioCtx();
     await audioCtx.resume();
-
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     srcNode = audioCtx.createMediaStreamSource(stream);
-    micNode = new AudioWorkletNode(audioCtx, "pcm-processor", {
-    numberOfInputs: 1,
-    numberOfOutputs: 1,
-    outputChannelCount: [1]
-  });
+    micNode = new AudioWorkletNode(audioCtx, "pcm-processor", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
     micNode.port.onmessage = (ev) => {
       if (ws_audio?.readyState === 1) {
         const audioBuf = new Uint8Array(ev.data.byteLength + 1);
@@ -118,12 +121,10 @@ ws_audio.onmessage = (event) => {
     const silent = audioCtx.createGain(); silent.gain.value = 0;
     micNode.connect(silent).connect(audioCtx.destination);
     srcNode.connect(micNode);
-
     ws_audio?.send("START_MIC");
   };
 
   window.stopMic = () => {
-    console.log("🔇 發送 STOP_MIC 到 ESP32");
     running = false;
     try { srcNode?.disconnect(); } catch (_) {}
     try { micNode?.disconnect(); } catch (_) {}
@@ -132,23 +133,55 @@ ws_audio.onmessage = (event) => {
 
   window.startCam = () => {
     camOn = true;
-    if (ws_video?.readyState === 1) {
-      ws_video.send("START_CAM");
-      console.log("📷 發送 START_CAM 到 ESP32");
-    } else {
-      console.warn("⚠️ ws_video 尚未連線，無法啟用鏡頭");
-    }
+    if (ws_video?.readyState === 1) ws_video.send("START_CAM");
   };
 
   window.stopCam = () => {
     camOn = false;
-    if (ws_video?.readyState === 1) {
-      ws_video.send("STOP_CAM");
-      console.log("🛑 發送 STOP_CAM 到 ESP32");
-    }
+    if (ws_video?.readyState === 1) ws_video.send("STOP_CAM");
   };
 
   connectSockets();
+
+
+  // ======================== 📱 手機視訊 → LCD ========================
+  const B_CHUNK = 1024;
+  let ws_lcd, v = document.getElementById('v'), c = document.getElementById('c');
+  c.width = 240; c.height = 240;
+
+  async function sendFrame() {
+    if (!ws_lcd || ws_lcd.readyState !== 1) return;
+    const ctx = c.getContext('2d', { willReadFrequently:true });
+    ctx.drawImage(v, 0, 0, c.width, c.height);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.5));
+    const buf = await blob.arrayBuffer();
+    const u8 = new Uint8Array(buf);
+    const L = u8.length;
+    const n = Math.ceil(L / B_CHUNK);
+    const id = Math.floor(Math.random() * 1e6);
+    for (let ix=0; ix<n; ix++){
+      const off = ix * B_CHUNK, len = Math.min(B_CHUNK, L - off);
+      const frame = new Uint8Array(13+len+4);
+      frame[0]=0xB1;
+      frame[1]=(id>>24)&255; frame[2]=(id>>16)&255; frame[3]=(id>>8)&255; frame[4]=id&255;
+      frame[5]=(ix>>8)&255; frame[6]=ix&255;
+      frame[7]=(n>>8)&255; frame[8]=n&255;
+      frame[9]=(L>>24)&255; frame[10]=(L>>16)&255; frame[11]=(L>>8)&255; frame[12]=L&255;
+      frame.set(u8.subarray(off,off+len), 13);
+      ws_lcd.send(frame);
+      await new Promise(r=>setTimeout(r,5));
+    }
+    setTimeout(sendFrame, 100);
+  }
+
+  document.getElementById('startLcd').onclick = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({ video:true });
+    v.srcObject = stream;
+    ws_lcd = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone/lcd");
+    ws_lcd.binaryType = 'arraybuffer';
+    ws_lcd.onopen = () => sendFrame();
+  };
+
 })();
 </script>
 </body>
