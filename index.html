@@ -166,54 +166,53 @@
 
 
   // ======================== 📱 手機視訊 → LCD ========================
-const LCD_W = 240, LCD_H = 240;
-const FPS = 10;  // 限制 10 張/秒
-const FRAME_INTERVAL = 1000 / FPS;
+const B_CHUNK = 1024;    
 let ws_lcd, v = document.getElementById('v'), c = document.getElementById('c');
-c.width = LCD_W; c.height = LCD_H;
-  
+c.width = 240; c.height = 240;
+
+const FPS = 20;  // 限制為 10 張/秒
+const FRAME_INTERVAL = 1000 / FPS;
 
 async function sendFrame() {
   if (!ws_lcd || ws_lcd.readyState !== 1) return;
 
   const ctx = c.getContext('2d', { willReadFrequently:true });
-  ctx.drawImage(v, 0, 0, LCD_W, LCD_H);
+  ctx.drawImage(v, 0, 0, c.width, c.height);
 
-  const img = ctx.getImageData(0, 0, LCD_W, LCD_H);
-  const total = img.width * img.height;
-  const rgb565 = new Uint8Array(total * 2);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.5));
+  const buf = await blob.arrayBuffer();
+  const u8 = new Uint8Array(buf);
+  const L = u8.length;
+  const n = Math.ceil(L / B_CHUNK);
+  const id = Math.floor(Math.random() * 1e6);
 
-  // RGBA8888 → RGB565
-for (let i = 0, j = 0; i < total; i++, j += 4) {
-  const r = img.data[j] >> 3;
-  const g = img.data[j+1] >> 2;
-  const b = img.data[j+2] >> 3;
-  const rgb = (r << 11) | (g << 5) | b;  // 16bit RGB565
-  rgb565[i*2]   = rgb & 0xFF;            // 低位
-  rgb565[i*2+1] = (rgb >> 8) & 0xFF;     // 高位
-}
-  
+  for (let ix=0; ix<n; ix++){
+    const off = ix * B_CHUNK, len = Math.min(B_CHUNK, L - off);
+    const frame = new Uint8Array(13+len+4);
+    frame[0]=0xB1;
+    frame[1]=(id>>24)&255; frame[2]=(id>>16)&255; frame[3]=(id>>8)&255; frame[4]=id&255;
+    frame[5]=(ix>>8)&255; frame[6]=ix&255;
+    frame[7]=(n>>8)&255; frame[8]=n&255;
+    frame[9]=(L>>24)&255; frame[10]=(L>>16)&255; frame[11]=(L>>8)&255; frame[12]=L&255;
+    frame.set(u8.subarray(off,off+len), 13);
+    ws_lcd.send(frame);
+    await new Promise(r=>setTimeout(r,5));
+  }
 
-if (ws_lcd && ws_lcd.readyState === 1) {
-  console.log("📤 傳送一張", rgb565.length, "bytes");
-  ws_lcd.send(rgb565);
+  setTimeout(sendFrame, FRAME_INTERVAL);  // 🟢 限制 10fps，避免閃爍
 }
-  setTimeout(sendFrame, FRAME_INTERVAL);
-}
+
 
 document.getElementById('startLcd').onclick = async () => {
   const stream = await navigator.mediaDevices.getUserMedia({ video:true });
   v.srcObject = stream;
-  v.muted = true;             // 🟢 確保靜音（允許手機自動播放）
-  v.playsInline = true;
-
-  await v.play();              // 🟢 強制等到有畫面
 
   ws_lcd = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone/lcd");
   ws_lcd.binaryType = 'arraybuffer';
 
-  ws_lcd.onopen = () => {
-    console.log("📡 LCD WebSocket 已連線，開始傳畫面");
+  ws_lcd.onopen = async () => {
+    await v.play(); // 🟢 等待相機畫面真的開始播放
+    console.log("📡 LCD WebSocket 已連線，開始傳送");
     sendFrame();
   };
 };
