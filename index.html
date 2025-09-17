@@ -145,42 +145,32 @@
 
 
   // ======================== 📱 手機視訊 → LCD ========================
-const B_CHUNK = 1024;    
+const LCD_W = 240, LCD_H = 240;
 let ws_lcd, v = document.getElementById('v'), c = document.getElementById('c');
-c.width = 240; c.height = 240;
-
-const FPS = 20;  // 限制為 10 張/秒
-const FRAME_INTERVAL = 1000 / FPS;
+c.width = LCD_W; c.height = LCD_H;
 
 async function sendFrame() {
   if (!ws_lcd || ws_lcd.readyState !== 1) return;
 
   const ctx = c.getContext('2d', { willReadFrequently:true });
-  ctx.drawImage(v, 0, 0, c.width, c.height);
+  ctx.drawImage(v, 0, 0, LCD_W, LCD_H);
 
-  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.5));
-  const buf = await blob.arrayBuffer();
-  const u8 = new Uint8Array(buf);
-  const L = u8.length;
-  const n = Math.ceil(L / B_CHUNK);
-  const id = Math.floor(Math.random() * 1e6);
+  const img = ctx.getImageData(0, 0, LCD_W, LCD_H);
+  const total = img.width * img.height;
+  const rgb565 = new Uint8Array(total * 2);
 
-  for (let ix=0; ix<n; ix++){
-    const off = ix * B_CHUNK, len = Math.min(B_CHUNK, L - off);
-    const frame = new Uint8Array(13+len+4);
-    frame[0]=0xB1;
-    frame[1]=(id>>24)&255; frame[2]=(id>>16)&255; frame[3]=(id>>8)&255; frame[4]=id&255;
-    frame[5]=(ix>>8)&255; frame[6]=ix&255;
-    frame[7]=(n>>8)&255; frame[8]=n&255;
-    frame[9]=(L>>24)&255; frame[10]=(L>>16)&255; frame[11]=(L>>8)&255; frame[12]=L&255;
-    frame.set(u8.subarray(off,off+len), 13);
-    ws_lcd.send(frame);
-    await new Promise(r=>setTimeout(r,5));
+  // RGBA8888 → RGB565
+  for (let i = 0, j = 0; i < total; i++, j += 4) {
+    const r = img.data[j] >> 3;
+    const g = img.data[j+1] >> 2;
+    const b = img.data[j+2] >> 3;
+    rgb565[i*2]   = (r << 3) | (g >> 3);
+    rgb565[i*2+1] = ((g & 0x07) << 5) | b;
   }
 
-  setTimeout(sendFrame, FRAME_INTERVAL);  // 🟢 限制 10fps，避免閃爍
+  ws_lcd.send(rgb565.buffer);
+  requestAnimationFrame(sendFrame); // 🟢 滿速跑
 }
-
 
 document.getElementById('startLcd').onclick = async () => {
   const stream = await navigator.mediaDevices.getUserMedia({ video:true });
@@ -190,11 +180,12 @@ document.getElementById('startLcd').onclick = async () => {
   ws_lcd.binaryType = 'arraybuffer';
 
   ws_lcd.onopen = async () => {
-    await v.play(); // 🟢 等待相機畫面真的開始播放
-    console.log("📡 LCD WebSocket 已連線，開始傳送");
+    await v.play();
+    console.log("📡 LCD WebSocket 已連線，開始傳畫面");
     sendFrame();
   };
 };
+
 
 })();
 </script>
