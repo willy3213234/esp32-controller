@@ -168,7 +168,8 @@ async function sendFrame() {
     rgb565[i*2]   = rgb >> 8;         // 高位元組
     rgb565[i*2+1] = rgb & 0xFF;       // 低位元組
   }
-
+  
+console.log("📤 傳送影像 bytes:", rgb565.length); 
   ws_lcd.send(rgb565.buffer);
   requestAnimationFrame(sendFrame); // 🟢 滿速跑
 }
