@@ -37,6 +37,27 @@
 </section>
 
 <script type="module">
+
+    (function () {
+  const logBox = document.createElement('div');
+  logBox.style.cssText = `
+    position:fixed;bottom:0;left:0;width:100%;max-height:40%;
+    overflow:auto;background:rgba(0,0,0,0.7);color:#0f0;
+    font:12px/1.4 monospace;padding:6px;white-space:pre-wrap;z-index:9999;
+  `;
+  document.body.appendChild(logBox);
+
+  const origLog = console.log, origErr = console.error;
+  function print(prefix, args) {
+    const msg = [...args].map(x => typeof x === 'object' ? JSON.stringify(x) : x).join(' ');
+    logBox.textContent += `${prefix} ${msg}\n`;
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+  console.log = (...args) => { origLog(...args); print('📗', args); };
+  console.error = (...args) => { origErr(...args); print('📕', args); };
+})();
+
+  
 (async () => {
   // ======================== 🎙️ 音訊 + 相機 ========================
   const SR = 16000;
