@@ -177,12 +177,15 @@ console.log("📤 傳送影像 bytes:", rgb565.length);
 document.getElementById('startLcd').onclick = async () => {
   const stream = await navigator.mediaDevices.getUserMedia({ video:true });
   v.srcObject = stream;
+  v.muted = true;             // 🟢 確保靜音（允許手機自動播放）
+  v.playsInline = true;
+
+  await v.play();              // 🟢 強制等到有畫面
 
   ws_lcd = new WebSocket("wss://esp32-server-st33.onrender.com/toPhone/lcd");
   ws_lcd.binaryType = 'arraybuffer';
 
-  ws_lcd.onopen = async () => {
-    await v.play();
+  ws_lcd.onopen = () => {
     console.log("📡 LCD WebSocket 已連線，開始傳畫面");
     sendFrame();
   };
