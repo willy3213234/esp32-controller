@@ -161,11 +161,12 @@ async function sendFrame() {
 
   // RGBA8888 → RGB565
   for (let i = 0, j = 0; i < total; i++, j += 4) {
-    const r = img.data[j] >> 3;
-    const g = img.data[j+1] >> 2;
-    const b = img.data[j+2] >> 3;
-    rgb565[i*2]   = (r << 3) | (g >> 3);
-    rgb565[i*2+1] = ((g & 0x07) << 5) | b;
+    const r = img.data[j] >> 3;       // 5 bits
+    const g = img.data[j+1] >> 2;     // 6 bits
+    const b = img.data[j+2] >> 3;     // 5 bits
+    const rgb = (r << 11) | (g << 5) | b;
+    rgb565[i*2]   = rgb >> 8;         // 高位元組
+    rgb565[i*2+1] = rgb & 0xFF;       // 低位元組
   }
 
   ws_lcd.send(rgb565.buffer);
