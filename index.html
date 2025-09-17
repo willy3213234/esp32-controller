@@ -167,8 +167,11 @@
 
   // ======================== 📱 手機視訊 → LCD ========================
 const LCD_W = 240, LCD_H = 240;
+const FPS = 15;  // 限制 10 張/秒
+const FRAME_INTERVAL = 1000 / FPS;
 let ws_lcd, v = document.getElementById('v'), c = document.getElementById('c');
 c.width = LCD_W; c.height = LCD_H;
+  
 
 async function sendFrame() {
   if (!ws_lcd || ws_lcd.readyState !== 1) return;
@@ -195,7 +198,7 @@ if (ws_lcd && ws_lcd.readyState === 1) {
   console.log("📤 傳送一張", rgb565.length, "bytes");
   ws_lcd.send(rgb565);
 }
-  requestAnimationFrame(sendFrame); // 🟢 滿速跑
+  setTimeout(sendFrame, FRAME_INTERVAL);
 }
 
 document.getElementById('startLcd').onclick = async () => {
