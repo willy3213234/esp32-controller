@@ -191,8 +191,15 @@ async function sendFrame() {
   }
   
 console.log("📤 傳送影像 bytes:", rgb565.length); 
-  const bin = new Uint8Array(rgb565.buffer);  // 🟢 強制確保是 Uint8Array
-  ws_lcd.send(bin);
+  const CHUNK = 4096;
+  const totalBytes = rgb565.length;
+
+  for (let off = 0; off < totalBytes; off += CHUNK) {
+    const end = Math.min(off + CHUNK, totalBytes);
+    const slice = rgb565.subarray(off, end);
+    ws_lcd.send(slice);
+    await new Promise(r => setTimeout(r, 2)); // 小延遲避免擁塞
+  }
   requestAnimationFrame(sendFrame); // 🟢 滿速跑
 }
 
