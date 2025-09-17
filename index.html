@@ -191,7 +191,8 @@ async function sendFrame() {
   }
   
 console.log("📤 傳送影像 bytes:", rgb565.length); 
-  ws_lcd.send(rgb565.buffer);
+  const bin = new Uint8Array(rgb565.buffer);  // 🟢 強制確保是 Uint8Array
+  ws_lcd.send(bin);
   requestAnimationFrame(sendFrame); // 🟢 滿速跑
 }
 
