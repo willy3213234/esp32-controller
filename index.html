@@ -190,16 +190,11 @@ async function sendFrame() {
     rgb565[i*2+1] = rgb & 0xFF;       // 低位元組
   }
   
-console.log("📤 傳送影像 bytes:", rgb565.length); 
-  const CHUNK = 4096;
-  const totalBytes = rgb565.length;
 
-  for (let off = 0; off < totalBytes; off += CHUNK) {
-    const end = Math.min(off + CHUNK, totalBytes);
-    const slice = rgb565.subarray(off, end);
-    ws_lcd.send(slice);
-    await new Promise(r => setTimeout(r, 2)); // 小延遲避免擁塞
-  }
+if (ws_lcd && ws_lcd.readyState === 1) {
+  console.log("📤 傳送一張", rgb565.length, "bytes");
+  ws_lcd.send(rgb565);
+}
   requestAnimationFrame(sendFrame); // 🟢 滿速跑
 }
 
